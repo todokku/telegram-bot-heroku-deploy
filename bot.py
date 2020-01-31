@@ -1,68 +1,67 @@
-import logging
-
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-
-# Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-
-logger = logging.getLogger(__name__)
-
-
-# Define a few command handlers. These usually take the two arguments update and
-# context. Error handlers also receive the raised TelegramError object in error.
-def start(update, context):
-    """Send a message when the command /start is issued."""
-    update.message.reply_text('Hey this is your bot!')
-
-
-def help(update, context):
-    """Send a message when the command /help is issued."""
-    update.message.reply_text('Currently I am in Alpha stage, help me also!')
-
-def piracy(update, context):
-    update.message.reply_text('Ahhan, FBI wants to know your location!')
-
-
-def echo(update, context):
-    """Echo the user message."""
-    update.message.reply_text(update.message.text)
-
-
-def error(update, context):
-    """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
-
-
-def main():
-    """Start the bot."""
-    # Create the Updater and pass it your bot's token.
-    # Make sure to set use_context=True to use the new context based callbacks
-    # Post version 12 this will no longer be necessary
-    updater = Updater("//TOKEN//", use_context=True)
-
-    # Get the dispatcher to register handlers
-    dp = updater.dispatcher
-
-    # on different commands - answer in Telegram
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help))
-    dp.add_handler(CommandHandler("piracy", piracy))
-
-    # on noncommand i.e message - echo the message on Telegram
-    dp.add_handler(MessageHandler(Filters.text, echo))
-
-    # log all errors
-    dp.add_error_handler(error)
-
-    # Start the Bot
-    updater.start_polling()
-
-    # Run the bot until you press Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT. This should be used most of the time, since
-    # start_polling() is non-blocking and will stop the bot gracefully.
-    updater.idle()
-
-
+import requests
+import subprocess
+import json
+import sys
+import threading
+import time
+from queue import Queue 
+ 
+numberOfViewers = 10
+builderThreads = 25
+startTime = time.time()
+numberOfSockets = 0
+concurrent = 25
+urls = []
+urlsUsed = []
+ 
+def getURL(): # Get tokens
+  output = subprocess.Popen(["livestreamer", "www.twitch.tv/radiojavantv", "-j"], stdout=subprocess.PIPE).communicate()[0]
+  l = json.loads(output.decode()) # Parse json and return the URL parameter
+  if 'streams' in l and 'worst' in l['streams'] and 'url' in l['streams']['worst']:
+  	return l['streams']['worst']['url']
+ 
+def build(): # Builds a set of tokens, aka viewers
+	global numberOfSockets
+	global numberOfViewers
+	while True:
+		if numberOfSockets < numberOfViewers:
+			numberOfSockets += 1
+			print ("Building viewers " + str(numberOfSockets) + "/" + str(numberOfViewers))
+			urls.append(getURL())
+ 
+def view(): # Opens connections to send views
+	global numberOfSockets
+	while True:
+		url=q.get()
+		requests.head(url)
+		if (url in urlsUsed):
+			urls.remove(url)
+			urlsUsed.remove(url)
+			numberOfSockets -= 1
+		else:
+			urlsUsed.append(url)
+		q.task_done()
+		print('beep')
+ 
 if __name__ == '__main__':
-    main()
+	for i in range(0, builderThreads):
+		threading.Thread(target = build).start()
+	
+	while True:
+		while (numberOfViewers != numberOfSockets): # Wait until sockets are built
+			time.sleep(1)
+ 
+		q=Queue(concurrent*2)
+		for i in range(concurrent):
+			try:
+				t=threading.Thread(target=view)
+				t.daemon=True
+				t.start()
+			except:
+				print ('thread error')
+		try:
+			for url in urls:
+				q.put(url.strip())
+				q.join()
+		except KeyboardInterrupt:
+			sys.exit(1)
